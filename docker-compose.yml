@@ -1,0 +1,44 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cyberhud_backend
+    restart: unless-stopped
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-CYBER_HUD_SUPER_SECRET_KEY_9847291038472910}
+      - FERNET_KEY=${FERNET_KEY:-jZ4OqKvhQ86a3D2x_r1PZ4wK6y0f0U6A1p2B3C4D5E6=}
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/dashboard.db
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      - PLUGINS_DIR=/app/plugins
+      - STATIC_DIR=/app/static
+    volumes:
+      - ./data:/app/data
+      - ./backend/plugins:/app/plugins
+      - ./backend/static:/app/static
+    networks:
+      - cyberhud_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cyberhud_frontend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - cyberhud_network
+
+networks:
+  cyberhud_network:
+    driver: bridge
