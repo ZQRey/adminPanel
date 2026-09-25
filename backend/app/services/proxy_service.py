@@ -30,16 +30,43 @@ class ProxyService:
             await writer.wait_closed()
             latency = round((time.perf_counter() - start) * 1000, 2)
             
-            # If admin DN provided, attempt LDAP bind
+            # If admin credentials provided, attempt LDAP bind
             if admin_dn and admin_pass:
+                bind_user = str(admin_dn).strip()
+                base_dn = config.get("base_dn", "").strip()
+                # If username provided without '@' and not a full DN (CN=...), auto-append domain from base_dn
+                if "@" not in bind_user and not bind_user.upper().startswith("CN=") and base_dn:
+                    domain_parts = [p.split("=")[1] for p in base_dn.split(",") if p.lower().startswith("dc=")]
+                    if domain_parts:
+                        bind_user = f"{bind_user}@{'.'.join(domain_parts)}"
+
                 from ldap3 import Server, Connection, ALL
-                server = Server(host, port=actual_port, use_ssl=use_ssl, get_info=ALL, connect_timeout=2)
-                conn = Connection(server, user=admin_dn, password=admin_pass, auto_bind=False)
+                server = Server(host, port=actual_port, use_ssl=use_ssl, get_info=ALL, connect_timeout=3)
+                conn = Connection(server, user=bind_user, password=admin_pass, auto_bind=False)
                 if conn.bind():
                     conn.unbind()
-                    return {"success": True, "message": f"AD LDAP Connected & Bind Verified ({latency}ms)", "latency_ms": latency}
+                    return {"success": True, "message": f"AD LDAP Connected & Bind Verified as {bind_user} ({latency}ms)", "latency_ms": latency}
                 else:
-                    return {"success": False, "message": f"TCP Connected, but Bind Failed: {conn.result['description']}", "latency_ms": latency}
+                    res_desc = conn.result.get('description', 'Bind Failed')
+                    res_msg = str(conn.result.get('message', '') or '')
+                    import re
+                    match = re.search(r'data\s+([0-9a-fA-F]{3,4})', res_msg)
+                    detail = ""
+                    if match:
+                        code = match.group(1).lower()
+                        ad_codes = {
+                            "52e": "Неверный пароль (data 52e)",
+                            "52f": "Ограничение учетной записи (data 52f)",
+                            "530": "Вход в данное время запрещен (data 530)",
+                            "531": "Вход с данной рабочей станции запрещен (data 531)",
+                            "532": "Срок действия пароля истек (data 532)",
+                            "533": "Учетная запись отключена (data 533)",
+                            "701": "Срок действия учетной записи истек (data 701)",
+                            "773": "Пользователь должен сменить пароль при первом входе (data 773)",
+                            "775": "Учетная запись заблокирована (Locked Out - data 775)"
+                        }
+                        detail = f" — {ad_codes.get(code, f'Код AD: data {code}')}"
+                    return {"success": False, "message": f"TCP Connected, but Bind Failed ({bind_user}): {res_desc}{detail}", "latency_ms": latency}
 
             return {"success": True, "message": f"AD LDAP Host Reachable ({latency}ms)", "latency_ms": latency}
         except Exception as e:

@@ -65,11 +65,11 @@
             />
           </div>
           <div>
-            <label class="block text-[10px] text-cyan-400/80 mb-1">SERVICE ADMIN DN</label>
+            <label class="block text-[10px] text-cyan-400/80 mb-1">SERVICE ADMIN USER / UPN (e.g. a_panel@gp1.loc or a_panel)</label>
             <input 
               v-model="adForm.admin_dn" 
               type="text" 
-              placeholder="CN=bind_user,OU=Service,DC=corp,DC=local"
+              placeholder="a_panel@gp1.loc or a_panel or CN=..."
               class="w-full bg-slate-950 border border-cyan-500/40 rounded px-2.5 py-1.5 text-cyan-100 font-mono text-xs focus:outline-none focus:border-cyan-400"
             />
           </div>
@@ -318,7 +318,20 @@ const testIntegration = async (type) => {
     testingAd.value = true
     if (adId.value) {
       try {
-        const res = await authFetch(`/api/integrations/${adId.value}/test`, { method: 'POST' })
+        const payload = {
+          host: adForm.value.host,
+          port: Number(adForm.value.port),
+          config: {
+            base_dn: adForm.value.base_dn,
+            admin_dn: adForm.value.admin_dn,
+            admin_password: adForm.value.admin_password
+          }
+        }
+        const res = await authFetch(`/api/integrations/${adId.value}/test`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
         if (res.ok) {
           adTestResult.value = await res.json()
         }

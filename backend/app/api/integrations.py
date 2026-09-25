@@ -176,6 +176,7 @@ async def delete_integration(
 @router.post("/{integration_id}/test", response_model=TestConnectionResponse)
 async def test_integration(
     integration_id: int,
+    live_data: Optional[Dict[str, Any]] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -187,14 +188,33 @@ async def test_integration(
 
     config = {}
     if integration.encrypted_payload:
-        config = json.loads(decrypt_secret(integration.encrypted_payload))
+        try:
+            config = json.loads(decrypt_secret(integration.encrypted_payload))
+        except Exception:
+            config = {}
+
+    host = integration.host
+    port = integration.port
+
+    if live_data:
+        if live_data.get("host"):
+            host = live_data["host"]
+        if live_data.get("port"):
+            try:
+                port = int(live_data["port"])
+            except (ValueError, TypeError):
+                pass
+        if isinstance(live_data.get("config"), dict):
+            for k, v in live_data["config"].items():
+                if v and v != "********":
+                    config[k] = v
 
     if integration.type == "ad_ldap":
-        result = await ProxyService.test_ad_connection(integration.host, integration.port, config)
+        result = await ProxyService.test_ad_connection(host, port, config)
     elif integration.type == "proxmox":
-        result = await ProxyService.test_proxmox_connection(integration.host, integration.port, config)
+        result = await ProxyService.test_proxmox_connection(host, port, config)
     elif integration.type == "nut":
-        result = await ProxyService.test_nut_connection(integration.host, integration.port, config)
+        result = await ProxyService.test_nut_connection(host, port, config)
     else:
         result = {"success": True, "message": "Custom integration check passed", "latency_ms": 1.2}
 
